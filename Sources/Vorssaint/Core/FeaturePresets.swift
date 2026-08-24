@@ -110,7 +110,8 @@ extension AppFeature {
              .monitorCPU, .monitorGPU, .monitorMemory,
              .monitorNetwork, .monitorDisk, .monitorPower:
             return .periodic
-        case .pastePlain, .mixer, .soundOutputSwitcher, .micMute,
+        // Key overrides use Carbon hotkeys and one keyboard mapping. Nothing runs at rest.
+        case .pastePlain, .mixer, .soundOutputSwitcher, .micMute, .keyOverrides,
              .musicBlock, .keepAwake, .brightness, .quickLauncher, .quickToggles, .colorPicker,
              .screenOCR, .cleaningMode, .mediaTools, .cleaner, .uninstaller, .homebrew, .screenshot,
              .cameraPreview, .scratchpad, .commandBar, .screenRecorder, .fanControl,
