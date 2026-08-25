@@ -198,16 +198,25 @@ final class KeyOverrideService: ObservableObject {
              "--get", SuperKeySupport.userMappingProperty]
         )
         guard report.status == 0 else { return false }
+        // The Super key's entries ride along only while its own marker claims
+        // them; an unclaimed caps mapping is someone else's and stays external.
+        let partnerOwnsMapping = UserDefaults.standard.bool(
+            forKey: DefaultsKey.superKeyMappingApplied
+        )
         guard let existing = KeyOverrideSupport.consistentMappings(
             report.output,
-            ownsExistingMapping: ownsExistingMapping
+            ownsExistingMapping: ownsExistingMapping,
+            partnerOwnsMapping: partnerOwnsMapping
         ) else { return false }
         guard keys.isEmpty || !KeyOverrideSupport.hasMappingConflict(
-            in: existing, reclaiming: keys
+            in: existing, reclaiming: keys, ownsExistingMapping: ownsExistingMapping
         ) else { return false }
         let wanted = KeyOverrideSupport.mappings(reclaiming: keys, existing: existing)
-        if keys.isEmpty, !ownsExistingMapping,
-           SuperKeySupport.mappingsMatch(existing, wanted) { return true }
+        // Every keyboard already reports exactly this table, so there is
+        // nothing to write. `end()` of a shortcut recording re-syncs this
+        // feature, which would otherwise spend a set and a second get on every
+        // capture, Escape and focus loss.
+        if SuperKeySupport.mappingReportConfirms(report.output, expected: wanted) { return true }
         if !keys.isEmpty {
             // Set the marker before the write. After a crash, the next launch can then remove a partial mapping.
             UserDefaults.standard.set(true, forKey: DefaultsKey.keyOverridesMappingApplied)

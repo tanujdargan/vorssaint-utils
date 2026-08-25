@@ -16993,12 +16993,19 @@ struct MetricsTests {
         let foreignDictation = SuperKeyMapping(source: 0xC_0000_00CF,
                                                destination: 0x7_0000_0040)
         expect(KeyOverrideSupport.hasMappingConflict(in: [foreignDictation],
-                                                     reclaiming: [.dictation])
+                                                     reclaiming: [.dictation],
+                                                     ownsExistingMapping: true)
                 && !KeyOverrideSupport.hasMappingConflict(in: [dictationMapping],
-                                                          reclaiming: [.dictation])
+                                                          reclaiming: [.dictation],
+                                                          ownsExistingMapping: true)
                 && !KeyOverrideSupport.hasMappingConflict(in: [foreignDictation],
-                                                          reclaiming: [.focus]),
+                                                          reclaiming: [.focus],
+                                                          ownsExistingMapping: true),
                "an external remap of a wanted key refuses activation; owned or unrelated entries do not")
+        expect(KeyOverrideSupport.hasMappingConflict(in: [dictationMapping],
+                                                     reclaiming: [.dictation],
+                                                     ownsExistingMapping: false),
+               "a mapping of our own shape that no confirmed write made is external, not ours")
 
         // 51539607759→30064771134 is the owned dictation entry. 30064771172→30064771125 is external.
         let overrideOwnedDifferenceReport = """
@@ -17021,11 +17028,13 @@ struct MetricsTests {
         )
         """
         expect(KeyOverrideSupport.consistentMappings(overrideOwnedDifferenceReport,
-                                                     ownsExistingMapping: true)
+                                                     ownsExistingMapping: true,
+                                                     partnerOwnsMapping: true)
                 == [SuperKeyMapping(source: 30064771172, destination: 30064771125)],
                "a keyboard that arrived after the reclaim converges when only owned entries differ")
         expect(KeyOverrideSupport.consistentMappings(overrideOwnedDifferenceReport,
-                                                     ownsExistingMapping: false) == nil,
+                                                     ownsExistingMapping: false,
+                                                     partnerOwnsMapping: true) == nil,
                "an unowned difference between keyboards is never merged")
 
         // Keyboard A carries both features' entries (caps 30064771129 → F18
@@ -17050,9 +17059,24 @@ struct MetricsTests {
         let superKeyEntry = SuperKeyMapping(source: 30064771129, destination: 30064771181)
         let dictationEntry = SuperKeyMapping(source: 51539607759, destination: 30064771134)
         expect(KeyOverrideSupport.consistentMappings(bothFeaturesNewKeyboardReport,
-                                                     ownsExistingMapping: true)
+                                                     ownsExistingMapping: true,
+                                                     partnerOwnsMapping: true)
                 == [superKeyEntry],
                "a new keyboard converges with both features on, the Super key's entry riding along")
+        // The same two keyboards, with the Super key's marker unset: that
+        // caps mapping belongs to whatever else made it. It must not be lifted
+        // out of the comparison, and must not be copied onto keyboard B.
+        expect(KeyOverrideSupport.consistentMappings(bothFeaturesNewKeyboardReport,
+                                                     ownsExistingMapping: true,
+                                                     partnerOwnsMapping: false) == nil,
+               "an unclaimed caps mapping is external, so the keyboards simply disagree")
+        expect(SuperKeySupport.consistentMappings(
+            bothFeaturesNewKeyboardReport,
+            property: SuperKeySupport.userMappingProperty,
+            settingAside: SuperKeySupport.isOwnedMapping,
+            propagating: { _ in false }
+        ) == nil,
+               "and the same holds the other way, for an unclaimed F-row mapping")
         expect(KeyOverrideSupport.mappings(reclaiming: [.dictation],
                                            existing: [superKeyEntry])
                 == [dictationEntry, superKeyEntry],
@@ -17067,6 +17091,20 @@ struct MetricsTests {
         expect(SuperKeySupport.mappings(enablingSuperKey: true, existing: [dictationEntry])
                 == [superKeyEntry, dictationEntry],
                "the Super key's repair writes the override entry onto the new keyboard too")
+
+        // Which marker each writer consults, and the already-correct exit, live
+        // in the services, which the test target does not compile.
+        let keyOverrideServiceSource = (try? String(
+            contentsOfFile: "Sources/Vorssaint/Services/KeyOverrides/KeyOverrideService.swift",
+            encoding: .utf8)) ?? ""
+        let superKeyServiceSource = (try? String(
+            contentsOfFile: "Sources/Vorssaint/Services/SuperKey/SuperKeyService.swift",
+            encoding: .utf8)) ?? ""
+        expect(keyOverrideServiceSource.contains(DefaultsKey.superKeyMappingApplied)
+                && superKeyServiceSource.contains(DefaultsKey.keyOverridesMappingApplied),
+               "each mapping writer reads its partner's marker before carrying its entries")
+        expect(keyOverrideServiceSource.contains("mappingReportConfirms(report.output"),
+               "the override mapping stops at the first read when the table is already right")
 
         let accessibilityOverrideData = KeyOverrideSupport.encode([
             KeyOverride(key: .f13,

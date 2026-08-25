@@ -220,20 +220,33 @@ enum KeyOverrideSupport {
         return owned + others
     }
 
-    /// True when an external entry remaps a wanted key. The feature then refuses to start.
+    /// True when an entry already remaps a wanted key and is not ours to
+    /// replace. A mapping shaped like ours is ours only when the persistent
+    /// marker says a prior confirmed write made it; without that the feature
+    /// refuses to start rather than adopt — and later delete — a remap the
+    /// user set up elsewhere. Same rule as `SuperKeySupport.hasMappingConflict`.
     static func hasMappingConflict(in existing: [SuperKeyMapping],
-                                   reclaiming keys: [KeyOverrideKey]) -> Bool {
+                                   reclaiming keys: [KeyOverrideKey],
+                                   ownsExistingMapping: Bool) -> Bool {
         let sources = Set(keys.compactMap(\.reclaimSource))
-        return existing.contains { sources.contains($0.source) && !isOwnedMapping($0) }
+        return existing.contains {
+            sources.contains($0.source) && (!isOwnedMapping($0) || !ownsExistingMapping)
+        }
     }
 
-    /// Returns one table only when all keyboards report the same external mappings, through the Super key's shared core. The Super key's entries are the partner shape: ignored for the comparison, carried along in the write.
+    /// Returns one table only when all keyboards report the same external
+    /// mappings, through the Super key's shared core. The Super key's entries
+    /// are the partner shape — ignored for the comparison, carried along in
+    /// the write — but only once its own marker says it wrote them. An
+    /// unclaimed entry of that shape stays external, so it is compared like
+    /// any other and never copied onto a keyboard that lacks it.
     static func consistentMappings(_ report: String,
-                                   ownsExistingMapping: Bool) -> [SuperKeyMapping]? {
+                                   ownsExistingMapping: Bool,
+                                   partnerOwnsMapping: Bool) -> [SuperKeyMapping]? {
         SuperKeySupport.consistentMappings(
             report,
             property: SuperKeySupport.userMappingProperty,
             settingAside: ownsExistingMapping ? isOwnedMapping : { _ in false },
-            propagating: SuperKeySupport.isOwnedMapping)
+            propagating: partnerOwnsMapping ? SuperKeySupport.isOwnedMapping : { _ in false })
     }
 }

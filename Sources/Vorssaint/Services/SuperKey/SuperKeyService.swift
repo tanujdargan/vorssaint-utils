@@ -353,12 +353,18 @@ final class SuperKeyService: ObservableObject {
         )
         guard report.status == 0 else { return false }
         // The key overrides' entries are the partner shape here: ignored for
-        // the cross-keyboard comparison, carried along in the write.
+        // the cross-keyboard comparison, carried along in the write. Only
+        // while their own marker claims them, though — an unclaimed entry of
+        // that shape is an external remap, and copying it onto every keyboard
+        // is exactly what the rule above forbids.
+        let partnerOwnsMapping = UserDefaults.standard.bool(
+            forKey: DefaultsKey.keyOverridesMappingApplied
+        )
         guard let existing = SuperKeySupport.consistentMappings(
             report.output,
             property: SuperKeySupport.userMappingProperty,
             settingAside: ownsExistingMapping ? SuperKeySupport.isOwnedMapping : { _ in false },
-            propagating: KeyOverrideSupport.isOwnedMapping
+            propagating: partnerOwnsMapping ? KeyOverrideSupport.isOwnedMapping : { _ in false }
         ) else { return false }
         guard !enabled || !SuperKeySupport.hasMappingConflict(
             in: existing,
